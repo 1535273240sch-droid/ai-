@@ -2,6 +2,7 @@ package com.aisocial.agent.hook
 
 import com.aisocial.agent.MainHook
 import de.robv.android.xposed.XC_MethodHook
+import de.robv.android.xposed.XC_MethodHook.MethodHookParam
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import java.util.concurrent.ConcurrentHashMap
@@ -51,7 +52,7 @@ object XinyuHook {
                 observeClass,
                 "observeReceiveMessage",
                 observerClass,
-                Boolean::class.javaPrimitiveType,
+                java.lang.Boolean.TYPE,
                 object : XC_MethodHook() {
                     override fun afterHookedMethod(param: MethodHookParam) {
                         runCatching {
