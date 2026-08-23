@@ -32,8 +32,8 @@ android {
 }
 
 dependencies {
-    // Xposed API：本地 stub jar（运行时由 Xposed 框架提供，compileOnly 仅用于编译）
-    compileOnly(files("libs/stubjar-gradle/build/libs/api-82.jar"))
+    // Xposed API：本地 stub module（运行时由 Xposed 框架提供，compileOnly 仅用于编译）
+    compileOnly(project(":xposed-stub"))
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.code.gson:gson:2.10.1")

@@ -14,3 +14,5 @@ dependencyResolutionManagement {
 }
 rootProject.name = "aisocial-agent"
 include(":app")
+include(":xposed-stub")
+project(":xposed-stub").projectDir = file("app/libs/stubjar-gradle")

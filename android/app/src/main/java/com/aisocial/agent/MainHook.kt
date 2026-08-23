@@ -45,7 +45,7 @@ class MainHook : IXposedHookLoadPackage {
         // - 主进程：UI、发送消息入口
         // - :core 进程：IM 消息收发（nimlib 回调）
         // 骨架先对所有进程安装统一入口，方法签名级 Hook 点见 XinyuHook.TODO。
-        XposedBridge.log("[AISocial] 模块启用：${AppPrefs.isEnabled()}")
+        XposedBridge.log("[AISocial] 模块启用：${AppPrefs.isEnabled}")
 
         // 监听 Application.attach，确保主进程 Application 完整后再初始化
         XposedHelpers.findAndHookMethod(

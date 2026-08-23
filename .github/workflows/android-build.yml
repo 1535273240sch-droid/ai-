@@ -29,11 +29,8 @@ jobs:
           sdk-version: 34
           cache-disabled: false
 
-      - name: Build Xposed API stub jar
-        run: gradle -p android/app/libs/stubjar-gradle jar --no-daemon
-
       - name: Build debug APK
-        run: gradle -p android :app:assembleDebug --no-daemon --info
+        run: gradle -p android :app:assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
