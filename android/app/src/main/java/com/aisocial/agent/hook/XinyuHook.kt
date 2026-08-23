@@ -9,33 +9,28 @@ import java.util.concurrent.ConcurrentHashMap
 
 /** Hook 到消息后的回调 */
 interface MessageListener {
-    /** 对方发来消息（contactId 为平台侧会话/对方账号 ID） */
+    /** 对方发来的单聊文本消息（contactId 为对方账号） */
     fun onMessageReceived(contactId: String, content: String)
-
-    /** 我方发出消息 */
-    fun onMessageSent(contactId: String, content: String)
 }
 
 /**
  * 心遇（com.netease.moyi）消息 Hook。
  *
- * 逆向定稿方案（2026-08-23，APK 2.29.0，见 dump/hook_targets_sdk.txt）：
- * 全部基于**网易云信 SDK 官方未混淆 API**，不依赖心遇自身混淆业务类，跨版本稳定：
- * - 收消息：Hook `com.netease.nimlib.sdk.msg.MsgServiceObserve.observeReceiveMessage(Observer, boolean)`，
- *   对注册的 Observer 实例 hook `onEvent(Object)`，参数为 `List<IMMessage>`；
- *   IMMessage 提供 `getSessionId()` / `getFromAccount()` / `getContent()` / `getMsgType()` / `getTime()`
- * - 发消息：直接调用 SDK `MessageBuilder.createTextMessage(sessionId, SessionTypeEnum.P2P, text)`
- *   生成 IMMessage，再经 `NIMClient.getService(MsgService.class).sendMessage(IMMessage, false)` 发送
+ * 全部基于网易云信 SDK 官方未混淆 API，跨版本稳定：
+ * - 收消息：Hook MsgServiceObserve.observeReceiveMessage(Observer, boolean)，
+ *   再 hook Observer.onEvent(Object)，参数为 List<IMMessage>
+ * - 发消息：MessageBuilder.createTextMessage(sessionId, P2P, text)
+ *   + NIMClient.getService(MsgService).sendMessage(msg, false)
  *
- * 注意：IM 回调在 `:core` 进程（nimlib 所在进程）触发，MainHook 需对所有进程安装；
- * SDK 支持跨进程 API 调用，发送可在任一进程执行。
+ * 入站过滤（审查修复）：只放行 P2P + 文本 + 方向为 In 的消息，
+ * 防止：群聊误回复、图片/语音/系统消息喂给 AI、自己发的消息触发自对话循环。
  */
 object XinyuHook {
 
     private const val NIM_SDK = "com.netease.nimlib.sdk"
     private const val TAG = "AISocial"
 
-    /** 已 hook 过的 Observer 实例，避免重复 hook（observeReceiveMessage 会被多次注册） */
+    /** 已 hook 过的 Observer 实例，避免重复 hook */
     private val hookedObservers = ConcurrentHashMap.newKeySet<Any>()
 
     fun install(classLoader: ClassLoader, listener: MessageListener) {
@@ -43,7 +38,6 @@ object XinyuHook {
         hookMessageReceived(classLoader, listener)
     }
 
-    /** 收消息：hook SDK 观察者注册点，再 hook 具体 Observer 的 onEvent */
     private fun hookMessageReceived(classLoader: ClassLoader, listener: MessageListener) {
         try {
             val observeClass = XposedHelpers.findClass("$NIM_SDK.msg.MsgServiceObserve", classLoader)
@@ -78,30 +72,64 @@ object XinyuHook {
         }
     }
 
-    /** 解析 List<IMMessage>，提取对方发来的文本消息 */
+    /** 解析 List<IMMessage>，只放行：单聊(P2P) + 文本(text) + 收到(In) 的消息 */
     private fun handleIncomingMessages(any: Any?, listener: MessageListener) {
         if (any !is List<*>) return
         for (item in any) {
             if (item == null) continue
             runCatching {
+                // 只处理单聊（群聊 Team 消息绝不自动回复，防止在群里刷屏）
+                val sessionType = XposedHelpers.callMethod(item, "getSessionType") as? Enum<*>
+                    ?: return@runCatching
+                if (sessionType.name != "P2P") return@runCatching
+
+                // 只处理文本消息（图片/语音/视频/系统通知的 content 不是聊天文本）
+                val msgType = XposedHelpers.callMethod(item, "getMsgType") as? Enum<*>
+                    ?: return@runCatching
+                if (msgType.name != "text") return@runCatching
+
+                // 只处理对方发来的消息（Out = 自己发的，防 AI 跟自己无限对话）
+                val direct = XposedHelpers.callMethod(item, "getDirect") as? Enum<*>
+                    ?: return@runCatching
+                if (direct.name != "In") return@runCatching
+
                 val sessionId = XposedHelpers.callMethod(item, "getSessionId") as? String
                     ?: return@runCatching
-                val content = XposedHelpers.callMethod(item, "getContent") as? String
-                    ?: return@runCatching
-                val fromAccount = XposedHelpers.callMethod(item, "getFromAccount") as? String ?: ""
-                if (content.isBlank()) return@runCatching
-                // 忽略自己发送/系统消息
-                if (fromAccount == sessionId) return@runCatching
+
+                // 文本内容：优先 getTextContent()，回退 getContent()（不同 SDK 版本返回类型不一）
+                val content = extractText(item)
+                if (content.isNullOrBlank()) return@runCatching
+
+                XposedBridge.log("$TAG: 收到文本消息 [$sessionId]（${content.length}字）")
                 listener.onMessageReceived(sessionId, content)
             }
         }
     }
 
+    /** 提取文本：getTextContent() → getContent() as String → 附件 getText 反射 */
+    private fun extractText(item: Any): String? {
+        runCatching {
+            XposedHelpers.callMethod(item, "getTextContent")?.let { return it as? String }
+        }
+        runCatching {
+            (XposedHelpers.callMethod(item, "getContent") as? String)?.let { return it }
+        }
+        runCatching {
+            val attachment = XposedHelpers.getObjectField(item, "attachment")
+                ?: XposedHelpers.callMethod(item, "getAttachment")
+            attachment?.let {
+                XposedHelpers.callMethod(it, "getText")?.let { txt -> return txt as? String }
+            }
+        }
+        return null
+    }
+
     /**
-     * 发送文本消息：SDK 官方 API（MessageBuilder.createTextMessage + MsgService.sendMessage）。
-     * @return true=SDK 调用成功（最终发送状态由 SDK 回调决定）
+     * 发送文本消息（P2P）。
+     * @return true=SDK 调用成功
      */
     fun sendMessage(contactId: String, content: String): Boolean {
+        if (content.isBlank()) return false
         val classLoader = MainHook.classLoaderRef ?: return false
         return try {
             val builder = XposedHelpers.findClass("$NIM_SDK.msg.MessageBuilder", classLoader)
@@ -112,7 +140,8 @@ object XinyuHook {
             val msgServiceClazz = XposedHelpers.findClass("$NIM_SDK.msg.MsgService", classLoader)
             val msgService = XposedHelpers.callStaticMethod(nimClient, "getService", msgServiceClazz)
             XposedHelpers.callMethod(msgService, "sendMessage", msg, false)
-            XposedBridge.log("$TAG: 已调用 SDK 发送 -> [$contactId] $content")
+            // 日志脱敏：只记录长度，不落聊天内容
+            XposedBridge.log("$TAG: 已调用 SDK 发送 -> [$contactId]（${content.length}字）")
             true
         } catch (t: Throwable) {
             XposedBridge.log("$TAG: SDK 发送调用失败: ${t.message}")

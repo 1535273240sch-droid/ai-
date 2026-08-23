@@ -15,36 +15,24 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage
 /**
  * Xposed 入口：Hook 心遇（com.netease.moyi）。
  *
- * 全本地架构：消息 Hook → 手机直连 AI API 生成回复 → 发送/悬浮窗，
- * 不依赖任何中间服务器。
+ * 配置读取：本进程（心遇）通过 XSharedPreferences 读模块包的配置文件，
+ * ConfigActivity 在模块进程写入 —— 修复系统 Context 读写错位的 P0 问题。
  *
- * 注意：心遇的 IM（网易云信 nimlib）运行在 :core 进程，
- * Hook 对所有进程安装，收发消息跨进程调用 SDK 均可。
+ * IM 回调在 :core 进程，handleLoadPackage 对每个进程执行，统一安装。
  */
 class MainHook : IXposedHookLoadPackage {
 
     override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
         if (lpparam.packageName != TARGET_PACKAGE) return
-        val process = lpparam.processName
-        XposedBridge.log("[AISocial] 检测到心遇进程：$process")
+        XposedBridge.log("[AISocial] 检测到心遇进程：${lpparam.processName}")
         classLoaderRef = lpparam.classLoader
 
-        // 初始化本地配置存储（系统 Context，与进程无关）
-        val context = runCatching {
-            val activityThread = XposedHelpers.callStaticMethod(
-                XposedHelpers.findClass("android.app.ActivityThread", lpparam.classLoader),
-                "currentActivityThread",
-            )
-            XposedHelpers.callMethod(activityThread, "getSystemContext") as Context
-        }.getOrNull()
-        if (context == null) {
-            XposedBridge.log("[AISocial] 获取系统 Context 失败，中止 Hook")
-            return
-        }
-        AppPrefs.init(context)
-        XposedBridge.log("[AISocial] 模块启用：${AppPrefs.isEnabled}（进程 $process）")
+        // 读取端：XSharedPreferences 直读模块配置文件（不再用系统 Context 的 prefs）
+        AppPrefs.initForHook()
+        AppPrefs.reloadForHook()
+        XposedBridge.log("[AISocial] 模块启用：${AppPrefs.isEnabled}（API已配置：${AppPrefs.apiUrl.isNotBlank() && AppPrefs.apiKey.isNotBlank()}）")
 
-        // Application.attach 后再安装各组件（悬浮窗需要 Application Context）
+        // Application.attach 后安装各组件（悬浮窗需要心遇 Application Context）
         XposedHelpers.findAndHookMethod(
             Application::class.java,
             "attach",
@@ -64,9 +52,6 @@ class MainHook : IXposedHookLoadPackage {
     companion object {
         /** 心遇包名（网易，IM 底层网易云信 nimlib） */
         const val TARGET_PACKAGE = "com.netease.moyi"
-
-        /** IM 逻辑所在独立进程 */
-        const val CORE_PROCESS = ":core"
 
         /** 目标进程 classLoader，供 XinyuHook.sendMessage 调用 SDK 时使用 */
         @Volatile

@@ -94,13 +94,14 @@ class ConfigActivity : Activity() {
         btnSave.setOnClickListener { saveToPrefs() }
         root.addView(btnSave)
 
-        val btnGrantOverlay = Button(this).apply { text = "授予悬浮窗权限（建议模式需要）" }
+        val btnGrantOverlay = Button(this).apply { text = "授予悬浮窗权限（建议模式需要，跳到心遇的授权页）" }
         btnGrantOverlay.setOnClickListener {
             runCatching {
+                // 悬浮窗挂在心遇进程，系统考核的是心遇的授权，所以跳心遇的授权页
                 startActivity(
                     android.content.Intent(
                         android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        android.net.Uri.parse("package:$packageName"),
+                        android.net.Uri.parse("package:com.netease.moyi"),
                     ),
                 )
             }
@@ -108,7 +109,9 @@ class ConfigActivity : Activity() {
         root.addView(btnGrantOverlay)
 
         root.addView(space())
-        root.addView(hint("提示：模块需在 LSPosed 中启用并勾选「心遇」作用域后重启手机生效。"))
+        root.addView(hint("1. 模块需在 LSPosed 启用并勾选「心遇」作用域后重启手机。"))
+        root.addView(hint("2. 修改配置后需重启心遇（或重启手机）才对新消息生效。"))
+        root.addView(hint("3. 仅自动回复单聊文本消息；群聊、图片语音不处理。"))
 
         return ScrollView(this).apply { addView(root) }
     }
@@ -140,10 +143,9 @@ class ConfigActivity : Activity() {
         }
         toast("测试中…")
         scope.launch {
-            val result = withContext(Dispatchers.IO) {
-                runCatching { AIClient.testApi() }
-            }
-            result.onSuccess { toast("API 正常，模型回复：$it") }
+            // AIClient 内部已切换 IO，无需再套 withContext
+            runCatching { AIClient.testApi() }
+                .onSuccess { toast("API 正常，模型回复：$it") }
                 .onFailure { toast("API 测试失败：${it.message?.take(120)}") }
         }
     }
