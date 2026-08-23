@@ -1,0 +1,27 @@
+# ---------- Gradle / Android ----------
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+android/captures/
+*.apk
+*.aab
+
+# ---------- Node / 前端 ----------
+admin-web/node_modules/
+admin-web/dist/
+admin-web/.vite/
+
+# ---------- Python / 后端 ----------
+backend/.venv/
+backend/venv/
+backend/__pycache__/
+backend/.pytest_cache/
+backend/*.db
+*.pyc
+
+# ---------- 其他 ----------
+.DS_Store
+Thumbs.db
+*.log
