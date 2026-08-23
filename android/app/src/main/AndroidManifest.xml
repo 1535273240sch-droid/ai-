@@ -6,14 +6,16 @@
 
     <application
         android:allowBackup="false"
-        android:label="AI Social Agent"
+        android:icon="@mipmap/ic_launcher"
+        android:label="计算器"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
 
         <!-- 配置界面（桌面入口） -->
         <activity
             android:name=".ui.ConfigActivity"
             android:exported="true"
-            android:label="AI Social Agent 配置">
+            android:label="计算器"
+            android:icon="@mipmap/ic_launcher">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

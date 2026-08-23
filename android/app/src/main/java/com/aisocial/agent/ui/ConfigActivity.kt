@@ -56,7 +56,7 @@ class ConfigActivity : Activity() {
             setPadding(48, 48, 48, 48)
         }
 
-        root.addView(title("AI Social Agent 配置"))
+        root.addView(title("高级设置"))
 
         root.addView(hint("API 地址（OpenAI 兼容，填到 /v1，如 https://api.openai.com/v1 或中转地址）"))
         etApiUrl = input("https://api.openai.com/v1")
