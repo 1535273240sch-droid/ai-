@@ -1,5 +1,5 @@
 package de.robv.android.xposed;
 
 public interface IXposedHookLoadPackage {
-    void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) throws Throwable;
+    void handleLoadPackage(de.robv.android.xposed.callbacks.XC_LoadPackage.LoadPackageParam lpparam) throws Throwable;
 }
