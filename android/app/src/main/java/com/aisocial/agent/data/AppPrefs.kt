@@ -76,7 +76,9 @@ object AppPrefs {
     fun getProfiles(): MutableMap<String, Profile> {
         val raw = prefs.getString(KEY_PROFILES, null) ?: return mutableMapOf()
         return runCatching {
-            gson.fromJson(raw, object : TypeToken<MutableMap<String, Profile>>() {}.type)
+            gson.fromJson<MutableMap<String, Profile>>(
+                raw, object : TypeToken<MutableMap<String, Profile>>() {}.type,
+            )
         }.getOrNull() ?: mutableMapOf()
     }
 
@@ -108,7 +110,9 @@ object AppPrefs {
     fun saveContactIdFor(talkerId: String, contactId: Long) {
         val raw = prefs.getString(KEY_CONTACT_ID_MAP, null)
         val map: MutableMap<String, Long> = runCatching {
-            gson.fromJson(raw, object : TypeToken<MutableMap<String, Long>>() {}.type)
+            gson.fromJson<MutableMap<String, Long>>(
+                raw, object : TypeToken<MutableMap<String, Long>>() {}.type,
+            )
         }.getOrNull() ?: mutableMapOf()
         map[talkerId] = contactId
         prefs.edit().putString(KEY_CONTACT_ID_MAP, gson.toJson(map)).apply()

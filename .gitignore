@@ -25,3 +25,5 @@ backend/*.db
 .DS_Store
 Thumbs.db
 *.log
+android/app/libs/stubjar-gradle/build/
+android/app/build/
