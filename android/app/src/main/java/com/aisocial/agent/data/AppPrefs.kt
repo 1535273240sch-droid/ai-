@@ -99,14 +99,15 @@ object AppPrefs {
     fun getContactIdFor(talkerId: String): Long? {
         val raw = prefs.getString(KEY_CONTACT_ID_MAP, null) ?: return null
         return runCatching {
-            val map = gson.fromJson(raw, object : TypeToken<MutableMap<String, Long>>() {}.type)
+            val map: MutableMap<String, Long> =
+                gson.fromJson(raw, object : TypeToken<MutableMap<String, Long>>() {}.type)
             map[talkerId]
         }.getOrNull()
     }
 
     fun saveContactIdFor(talkerId: String, contactId: Long) {
         val raw = prefs.getString(KEY_CONTACT_ID_MAP, null)
-        val map = runCatching {
+        val map: MutableMap<String, Long> = runCatching {
             gson.fromJson(raw, object : TypeToken<MutableMap<String, Long>>() {}.type)
         }.getOrNull() ?: mutableMapOf()
         map[talkerId] = contactId

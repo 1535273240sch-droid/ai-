@@ -50,7 +50,7 @@ class SuggestOverlay(private val context: Context) {
         val panel = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 24, 24, 24)
-            background = android.graphics.drawable.ColorDrawable(0xEEFFFFFF)
+            background = android.graphics.drawable.ColorDrawable(0xEEFFFFFF.toInt())
         }
 
         panel.addView(TextView(context).apply {
