@@ -2,6 +2,7 @@ package com.aisocial.agent.ui
 
 import android.app.Activity
 import android.os.Bundle
+import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
@@ -12,9 +13,8 @@ import android.widget.ScrollView
 import android.widget.Space
 import android.widget.TextView
 import android.widget.Toast
+import com.aisocial.agent.api.AIClient
 import com.aisocial.agent.data.AppPrefs
-import com.aisocial.agent.data.LicenseManager
-import com.aisocial.agent.hook.SuggestOverlay
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -23,21 +23,24 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * 配置界面：服务器地址 / JWT / 卡密激活 / 模块开关 / 自动模式。
- * 纯动态布局，无 XML 资源，便于独立编译。
+ * 配置界面（全本地）：API 地址 / API Key / 模型名 / 人设 / 开关。
+ * 纯动态布局，无 XML 资源。
  */
 class ConfigActivity : Activity() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-    private lateinit var etServer: EditText
-    private lateinit var etJwt: EditText
-    private lateinit var etLicense: EditText
+    private lateinit var etApiUrl: EditText
+    private lateinit var etApiKey: EditText
+    private lateinit var etModel: EditText
+    private lateinit var etPersona: EditText
     private lateinit var cbEnabled: CheckBox
     private lateinit var cbAuto: CheckBox
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 本 Activity 运行在模块自身进程，必须自己初始化 AppPrefs
+        AppPrefs.init(applicationContext)
         setContentView(buildUi())
         loadFromPrefs()
     }
@@ -47,45 +50,51 @@ class ConfigActivity : Activity() {
         scope.cancel()
     }
 
-    private fun buildUi(): LinearLayout {
+    private fun buildUi(): ScrollView {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(48, 48, 48, 48)
         }
 
         root.addView(title("AI Social Agent 配置"))
-        root.addView(hint("后端地址（如 http://192.168.1.100:8000，模拟器用 http://10.0.2.2:8000）"))
-        etServer = input("服务器地址")
-        root.addView(etServer)
 
-        root.addView(hint("JWT Token（后台登录 /auth/login 获取）"))
-        etJwt = input("JWT Token")
-        root.addView(etJwt)
+        root.addView(hint("API 地址（OpenAI 兼容，填到 /v1，如 https://api.openai.com/v1 或中转地址）"))
+        etApiUrl = input("https://api.openai.com/v1")
+        root.addView(etApiUrl)
 
-        root.addView(hint("卡密（XXXX-XXXX-XXXX，激活后自动回复才会工作）"))
-        etLicense = input("卡密")
-        root.addView(etLicense)
+        root.addView(hint("API Key"))
+        etApiKey = input("sk-...").apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        root.addView(etApiKey)
+
+        root.addView(hint("模型名（如 gpt-4o-mini / deepseek-chat，留空默认 gpt-4o-mini）"))
+        etModel = input(AIClient.DEFAULT_MODEL)
+        root.addView(etModel)
+
+        root.addView(hint("人设（你希望 AI 用什么身份/口吻回复，留空用默认）"))
+        etPersona = input("例：28岁男性，性格幽默，说话简短").apply {
+            minLines = 2
+            gravity = Gravity.TOP
+        }
+        root.addView(etPersona)
 
         cbEnabled = CheckBox(this).apply { text = "启用自动回复模块" }
-        cbAuto = CheckBox(this).apply { text = "自动模式（收到消息直接自动回复，关闭则弹建议悬浮窗）" }
+        cbAuto = CheckBox(this).apply { text = "自动模式（直接自动回复；关闭则弹 3 条建议悬浮窗手动选）" }
         root.addView(cbEnabled)
         root.addView(cbAuto)
 
         root.addView(space())
 
-        val btnActivate = Button(this).apply { text = "激活卡密" }
-        btnActivate.setOnClickListener { activate() }
-        root.addView(btnActivate)
-
-        val btnTest = Button(this).apply { text = "测试连接（GET /health）" }
-        btnTest.setOnClickListener { testConnection() }
+        val btnTest = Button(this).apply { text = "测试 API 连通" }
+        btnTest.setOnClickListener { testApi() }
         root.addView(btnTest)
 
         val btnSave = Button(this).apply { text = "保存设置" }
         btnSave.setOnClickListener { saveToPrefs() }
         root.addView(btnSave)
 
-        val btnGrantOverlay = Button(this).apply { text = "授予悬浮窗权限" }
+        val btnGrantOverlay = Button(this).apply { text = "授予悬浮窗权限（建议模式需要）" }
         btnGrantOverlay.setOnClickListener {
             runCatching {
                 startActivity(
@@ -98,73 +107,45 @@ class ConfigActivity : Activity() {
         }
         root.addView(btnGrantOverlay)
 
-        return root
+        root.addView(space())
+        root.addView(hint("提示：模块需在 LSPosed 中启用并勾选「心遇」作用域后重启手机生效。"))
+
+        return ScrollView(this).apply { addView(root) }
     }
 
     private fun loadFromPrefs() {
-        etServer.setText(AppPrefs.serverUrl)
-        etJwt.setText(AppPrefs.jwtToken)
-        etLicense.setText(AppPrefs.licenseCode)
+        etApiUrl.setText(AppPrefs.apiUrl)
+        etApiKey.setText(AppPrefs.apiKey)
+        etModel.setText(AppPrefs.modelName)
+        etPersona.setText(AppPrefs.personaPrompt)
         cbEnabled.isChecked = AppPrefs.isEnabled
         cbAuto.isChecked = AppPrefs.isAutoMode
-        SuggestOverlay.install(applicationContext)
     }
 
     private fun saveToPrefs() {
-        AppPrefs.serverUrl = etServer.text.toString()
-        AppPrefs.jwtToken = etJwt.text.toString()
-        AppPrefs.licenseCode = etLicense.text.toString()
+        AppPrefs.apiUrl = etApiUrl.text.toString()
+        AppPrefs.apiKey = etApiKey.text.toString()
+        AppPrefs.modelName = etModel.text.toString()
+        AppPrefs.personaPrompt = etPersona.text.toString()
         AppPrefs.isEnabled = cbEnabled.isChecked
         AppPrefs.isAutoMode = cbAuto.isChecked
         toast("已保存")
     }
 
-    private fun activate() {
+    private fun testApi() {
         saveToPrefs()
-        if (etLicense.text.isNullOrBlank()) {
-            toast("请先填写卡密")
+        if (AppPrefs.apiUrl.isBlank() || AppPrefs.apiKey.isBlank()) {
+            toast("请先填写 API 地址和 Key")
             return
         }
+        toast("测试中…")
         scope.launch {
-            val ok = runCatching {
-                withContext(Dispatchers.IO) {
-                    LicenseManager.activate(etLicense.text.toString(), deviceFingerprint())
-                }
-            }.getOrElse {
-                toast("激活失败：${it.message}")
-                return@launch
+            val result = withContext(Dispatchers.IO) {
+                runCatching { AIClient.testApi() }
             }
-            if (ok) toast("卡密激活成功") else toast("卡密激活失败（无效/已被绑定/过期）")
+            result.onSuccess { toast("API 正常，模型回复：$it") }
+                .onFailure { toast("API 测试失败：${it.message?.take(120)}") }
         }
-    }
-
-    private fun testConnection() {
-        saveToPrefs()
-        scope.launch {
-            val ok = runCatching {
-                withContext(Dispatchers.IO) {
-                    // 有 JWT 则刷新卡密状态；无则仅探测服务器可达性
-                    if (AppPrefs.jwtToken.isNotBlank()) {
-                        LicenseManager.refresh()
-                    } else {
-                        com.aisocial.agent.api.ApiClient.health()
-                    }
-                }
-            }.getOrElse {
-                toast("连接失败：${it.message}")
-                return@launch
-            }
-            toast(if (ok == true) "连接正常，卡密有效" else "连接正常")
-        }
-    }
-
-    private fun deviceFingerprint(): String {
-        val existing = AppPrefs.deviceFingerprint
-        if (existing.isNotBlank()) return existing
-        val fp = "android-" + android.os.Build.MODEL.replace(" ", "-") + "-" +
-            android.provider.Settings.Secure.getString(contentResolver, android.provider.Settings.Secure.ANDROID_ID)
-        AppPrefs.deviceFingerprint = fp
-        return fp
     }
 
     // ---------------- UI helpers ----------------
